@@ -15,8 +15,8 @@ addpath('./functions')
 
 input_path      = '/Volumes/lben-archives/2023/Simon/OrbitMiniData';
 output_path     = '/Volumes/lben-archives/2023/Simon/Biomemristors/Biomemdata-checked/AelK238AK242A';
-%filename        = 'AelK238AK242A_KCl_1M_pH6p2_10C_100us__230202131631';
-filename        = 'AelK238AK242A_KCl_1M_pH6p2_20C_100us__230202125956';
+filename        = 'AelK238AK242A_KCl_1M_pH6p2_10C_100us__230202131631';
+%filename        = 'AelK238AK242A_KCl_1M_pH6p2_20C_100us__230202125956';
 filename_format = 'PORE_SALT_CONCENTRATION_PH_TEMPERATURE_PERIOD_EMPTY_TIMESTAMP'; % how the filename is built up (seperate snippets with '_'). For femto data, a field PERIOD must exist which specifies the sampling period.
 device          = 'orbitmini';              % choose 'femto', 'axopatch' or 'orbitmini'
 figure_position = [0,0,0.9,0.9];            % figure position: [x,y,width,height]. x and y are positions of the lower-left figure corner. Values must be between 0 and 1, relative to the screen size. 
@@ -109,8 +109,8 @@ for c = 1:length(data)
 
     % Find regions of square waves (up and down steps)
     min_step_length = round(min_step_duration * data(c).sampling_rate);         % minimal duration of a voltage step (indeces)
-    up_step_inds    = find_up_steps(V, min_step_size, min_step_length);         
-    down_step_inds  = find_down_steps(V, min_step_size, min_step_length);
+    up_step_inds    = find_up_steps(V, min_step_size, min_step_length, n_relax);         
+    down_step_inds  = find_down_steps(V, min_step_size, min_step_length, n_relax);
 
     % Combine all waves into one array
     cycle_inds_unsorted  = [sine_wave_inds; up_step_inds; down_step_inds];
