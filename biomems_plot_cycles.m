@@ -11,26 +11,32 @@ addpath('./functions')
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % input and output
-input_path              = '/Volumes/lben-archives/2023/Simon';
-conductivity_data_path  = 'none';  % Enter a path to an xlsx file, or 'none'. If 'none', square waves will be fitted by an exponential, otherwise with the 2-state model (for which r_open and r_close will be estimated).
-plotting_path           = '/Volumes/lben-archives/2023/Simon/Biomemristors/Biomemdata-plots';
-filename_includes       = 'Aelwt_KCl_1M_pH3p2_25C_100us__230209163351';          % All filenames with this string included will be combined
+input_path              = '/Users/lukasvandenheuvel/Documents/EPFL/MA3/LBM/Biomemdata_cleaned/Ael-K238AK242A';
+conductivity_data_path  = 'none';
+plotting_path           = '/Users/lukasvandenheuvel/Documents/EPFL/MA3/LBM/Biomemdata_plots';
+filename_includes       = 'sine_f0.1Hz_C0_M1_Cm52.8_16-01-2023_17-01-06';          % All filenames with this string included will be combined
 output_title            = 'filename_format';     % specify a title for output plots OR enter 'filename_format' to use the format of the first loaded datafile.
 
+%input_path              = 'C:\Users\smayer\Desktop\Biomemdata-checked\Ael-wt';
+%conductivity_data_path  = 'none';  % Enter a path to an xlsx file, or 'none'. If 'none', square waves will be fitted by an exponential, otherwise with the 2-state model (for which r_open and r_close will be estimated).
+%plotting_path           = 'C:\Users\smayer\Desktop\Biomemdata-plots\newstuff';
+%filename_includes       = 'Aelwt_KCl_1M_pH6p2_10C_100us__230203141857'; % All filenames with this string will be combined
+%output_title            = filename_includes;     % specify a title for output plots OR enter 'filename_format' to use the format of the first loaded datafile.
+
 % pore-specific parameters
-g_open                  = 2e-9;     % rougly the conductance of a single pore when open (in Siemens)
-g_closed                = 0.5e-9;   % the conductance of a single pore when closed (in Siemens)
-V_low                   = 70;       % Voltage (in mV) below which almost no gating takes place. Is used to estimate number of pores.
+g_open                  = 0.1e-9;   % rougly the conductance of a single pore when open (in Siemens)
+g_closed                = 0.01e-9;  % the conductance of a single pore when closed (in Siemens)
+V_low                   = 70;       % Voltage (in mV) below which almost no gating takes place. Is used to estimate number of pores. Matters for slope calculation.
 
 % analysis parameters
-fft_peak_theshold       = 0.89;     % Decrease this if not all sine waves are properly found.
+num_cycles              = 15;       % number of cycles to include in analysis. The cycles with the highest maximal current will be picked.
 min_num_pores           = 1;        % minimal (estimated) number of pores needed to take measurement into account
 combine_cyles           = 'sum';    % How to combine multiple cycles. Choose between 'avg' and 'sum'.
-normalize_by            = 'slope';  % How to normalize current traces. Choose between 'max', 'slope' and 'none'.
+normalize_by            = 'max';    % How to normalize current traces. Choose between 'max', 'slope' and 'none'.
 
 % figure parameters
-format                  =  'pdf';                   % figure extension. png takes a long time
-export_plots            =  true;                    % if trdaue plots are saved in the specified format
+format                  =  'pdf';                   % figure extension png takes a long time
+export_plots            =  true;                    % if true plots are saved in the specified format
 figure_width            = 15; % inches
 figure_height           = 10; % inches
 figure_fontsize         = 11;
@@ -75,8 +81,14 @@ disp("Figure title format: '"+figure_title_format+"'")
 
 %% Combine sine_waves of all channels
 sine_waves = initialize_dataframe(fieldnames(data(1).sine_waves));
+sine_waves.maxI = [];
 for i = 1:length(data)
-    sine_waves = [sine_waves, data(i).sine_waves];
+    new_sine_waves = data(i).sine_waves;
+    % Obtain max-I values
+    for j = 1:length(new_sine_waves)
+        new_sine_waves(j).maxI = max(new_sine_waves(j).I_cycle);
+    end
+    sine_waves = [sine_waves, new_sine_waves];
 end
 sine_waves = sine_waves(2:end); % Remove first empty field
 
@@ -88,19 +100,27 @@ af = [[sine_waves(:).amp]', [sine_waves(:).freq]'];
 for i = 1:length(unique(ID)) % goes through every unique combi of a & f
     n = 0;                   % sets back number of cycles for next iteration
     unique_af_indeces = find(ID == i);                                      % lists all instances of a given unique combi of a & f
+    sine_waves_af     = sine_waves(unique_af_indeces);
+    % Filter the sine wave cycles with the highest amplitude
+    if num_cycles < length(sine_waves_af)
+        [~, ind] = sort([sine_waves_af(:).maxI]);
+        sine_waves_af = sine_waves_af(ind <= num_cycles);
+        disp(['Using the ',num2str(num_cycles), ' cycles with the highest amplitude.'])
+    else
+        disp(['Warning: you set num_cycles to ',num2str(num_cycles), ', but there are only ', num2str(length(sine_waves)), ' cycles available. Using all of them now.'])
+    end
     % Find maximal cycle size (to be used for padding later on)
     max_cycle_size = 0;
-    for j = 1:length(unique_af_indeces)
-        k = unique_af_indeces(j);
-        max_cycle_size = max(max_cycle_size, size(sine_waves(k).V_cycle,1));
+    for j = 1:length(sine_waves_af)
+        max_cycle_size = max(max_cycle_size, size(sine_waves_af(j).V_cycle,1));
     end
-    freq              = af(unique_af_indeces(1),2);
-    V_cycles          = zeros(max_cycle_size, length(unique_af_indeces));   % Store V of each cycle in one column
-    I_cycles          = zeros(max_cycle_size, length(unique_af_indeces));   % Store I of each cycle in one column
+    amp               = sine_waves_af(1).amp;
+    freq              = sine_waves_af(1).freq;
+    V_cycles          = zeros(max_cycle_size, length(sine_waves_af));       % Store V of each cycle in one column
+    I_cycles          = zeros(max_cycle_size, length(sine_waves_af));       % Store I of each cycle in one column
     cycles            = zeros(max_cycle_size, 2);                           % One column for voltage, one for current
-    for j = 1:length(unique_af_indeces)
-        k = unique_af_indeces(j);
-        cycle = [sine_waves(k).V_cycle, sine_waves(k).I_cycle];
+    for j = 1:length(sine_waves_af)
+        cycle = [sine_waves_af(j).V_cycle, sine_waves_af(j).I_cycle];
 
         % used for padding in case cycle arrays are not same length
         if size(cycle,1) < max_cycle_size
@@ -132,8 +152,6 @@ for i = 1:length(unique(ID)) % goes through every unique combi of a & f
         else
             error('Incorrect value for normalize_by. Choose between "max" and "slope"');
         end
-        freq = af(k,2);
-        amp = af(k,1);
     end
     
     V_cycles = V_cycles(:,1:n);
@@ -150,7 +168,7 @@ for i = 1:length(unique(ID)) % goes through every unique combi of a & f
         elseif isequal(normalize_by,'none')
             norm_current    = cycles(:,2);
         else
-            error('Incorrect value for normalize_by. Choose between "max" and "slope"');
+            error('Incorrect value for normalize_by. Choose between "max" , "slope" or "none"');
         end
         I_cycles = norm_current; % sum of the current, normalized
     end
@@ -191,7 +209,8 @@ for i = 1:length(unique(ID)) % goes through every unique combi of a & f
     Apos_loop           = sum(flat_loop(round(end/2)+1:end)) / numel(flat_loop(round(end/2)+1:end));
     ratio               = Apos_loop / Aneg_loop;
     
-    figure_title = figure_title_format + " " + normalize_by + " sine "+freq+"Hz "+amp+"mV n="+n;
+    figure_title = strrep(figure_title_format,'_',' ');
+    figure_sub_title = normalize_by + " sine "+freq+"Hz "+amp+"mV n="+n;
     
     figure()
     hold on
@@ -207,16 +226,18 @@ for i = 1:length(unique(ID)) % goes through every unique combi of a & f
     set(gca,'fontsize',20)
     xlabel('mV')
     ylabel(y_label) 
+    xlim([-amp-2 amp+2])
     title(figure_title);
+    subtitle(figure_sub_title);
     ax = gca;
-    
     ax.XAxisLocation = 'origin';
     ax.YAxisLocation = 'origin';
     set(gca,'TickDir','both')
     box off
     [~,fig_property] = format_figure(figure_width,figure_height,figure_fontsize,format);
     if export_plots == true
-        hgexport(gcf,fullfile(plotting_path,figure_title+"."+format),fig_property); 
+        figure_file_title = strrep(figure_title + " " + figure_sub_title,' ', '_');
+        hgexport(gcf,fullfile(plotting_path,figure_file_title+"."+format),fig_property); 
     end
     figure(gcf)
    
@@ -228,6 +249,7 @@ for i = 1:length(unique(ID)) % goes through every unique combi of a & f
     for w=1:size(I_cycles,2)
         I_cycle = I_cycles(:,w);
         time_to_plot = t_0 + linspace(0,1/freq,length(I_cycle));
+        
         yyaxis right
         plot(time_to_plot, av_voltage,'-r','LineWidth',2);
         yyaxis left
@@ -249,11 +271,9 @@ for i = 1:length(unique(ID)) % goes through every unique combi of a & f
     
     [~,fig_property] = format_figure(figure_width,figure_height,figure_fontsize,format);
     if export_plots == true
-        hgexport(gcf,fullfile(plotting_path,figure_title+'  I-traces.'+format),fig_property);
+        hgexport(gcf,fullfile(plotting_path,figure_file_title+'  I-traces.'+format),fig_property);
     end
     figure(gcf)
-    
-    break
 end
 
 %% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -385,13 +405,19 @@ for s = 1:2 % First up, then down
         
         % Calculate averages
         av_voltage           = cycles(:,1) / n; % averaging the voltage
-        av_time              = nanmean(t_cycles,2);
-        avg_current          = nanmean(I_cycles,2);    % mean over individual cycles
-        std_current          = nanstd(I_cycles,[],2);  % std over individual cycles
-        avg_n                = nanmean(n_cycles,2);
-        std_n                = nanstd(n_cycles,[],2);  % std over individual cycles
+%         av_time              = nanmean(t_cycles,2);
+%         avg_current          = nanmean(I_cycles,2);    % mean over individual cycles
+%         std_current          = nanstd(I_cycles,[],2);  % std over individual cycles
+%         avg_n                = nanmean(n_cycles,2);
+%         std_n                = nanstd(n_cycles,[],2);  % std over individual cycles
         avg_voltage          = av_voltage;
         
+        av_time              = mean(t_cycles,2,'omitnan');
+        avg_current          = mean(I_cycles,2,'omitnan');    % mean over individual cycles
+        std_current          = std(I_cycles,[],2,'omitnan');  % std over individual cycles
+        avg_n                = mean(n_cycles,2,'omitnan');
+        std_n                = std(n_cycles,[],2,'omitnan');  % std over individual cycles
+
         % Plot filled errorbars
         figure_title = figure_title_format + " "+step_directions{s}+"-step "+amp+"mV n="+n;
         figure()
@@ -437,18 +463,19 @@ for s = 1:2 % First up, then down
         % Figure formatting and export
         ylabel('Estimated fraction of open pores')
         xlabel('Time (s)')
-        title(figure_title);
+        title(strrep(figure_title,'_', ' '));
         set(gca,'TickDir','both')
         box off
         [~,fig_property] = format_figure(figure_width,figure_height,figure_fontsize,format);
         if export_plots == true
-            hgexport(gcf,fullfile(plotting_path,figure_title+"."+format),fig_property); 
+            figure_file_title = strrep(figure_title,' ', '_');
+            hgexport(gcf,fullfile(plotting_path,figure_file_title+"."+format),fig_property); 
         end
         figure(gcf)
 
         % Plot the individual I cycles
         figure()
-        title(figure_title);
+        title(strrep(figure_title,'_', ' '));
         colororder({'k','r'})
         t_0 = 0;
         for w=1:size(I_cycles,2)
@@ -473,7 +500,7 @@ for s = 1:2 % First up, then down
         box off
         [~,fig_property] = format_figure(figure_width,figure_height,figure_fontsize,format);
         if export_plots == true
-            hgexport(gcf,fullfile(plotting_path,figure_title+'  I-traces.'+format),fig_property);
+            hgexport(gcf,fullfile(plotting_path,figure_file_title+'  I-traces.'+format),fig_property);
         end
         figure(gcf)
     end

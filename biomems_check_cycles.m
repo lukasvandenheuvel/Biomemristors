@@ -13,12 +13,18 @@ addpath('./functions')
 %%%%%%%%%%%%%%%%%%%%%%%%%%% SET PARAMETERS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-input_path      = '/Volumes/lben-archives/2023/Simon/OrbitMiniData';
-output_path     = '/Volumes/lben-archives/2023/Simon/Biomemristors/Biomemdata-checked/AelK238AK242A';
-filename        = 'AelK238AK242A_KCl_1M_pH6p2_10C_100us__230202131631';
-%filename        = 'AelK238AK242A_KCl_1M_pH6p2_20C_100us__230202125956';
-filename_format = 'PORE_SALT_CONCENTRATION_PH_TEMPERATURE_PERIOD_EMPTY_TIMESTAMP'; % how the filename is built up (seperate snippets with '_'). For femto data, a field PERIOD must exist which specifies the sampling period.
-device          = 'orbitmini';              % choose 'femto', 'axopatch' or 'orbitmini'
+%input_path      = 'C:\Users\smayer\Desktop\OrbitMiniData';
+%output_path     = 'C:\Users\smayer\Desktop\Biomemdata-checked\Ael-wt';
+%filename        = 'Aelwt_CaCl_1M_pH6p2_25C_100us__230216184111'; % folder for orbitmini
+%filename_format = 'PORE_SALT_CONCENTRATION_PH_TEMPERATURE_PERIOD_EMPTY_TIMESTAMP'; % how the filename is built up (seperate snippets with '_'). For femto data, a field PERIOD must exist which specifies the sampling period.
+%device          = 'orbitmini';              % choose 'femto', 'axopatch' or 'orbitmini'
+%figure_position = [0.1,0.15,0.6,0.5];       % figure position: [x,y,width,height]. x and y are positions of the lower-left figure corner. Values must be between 0 and 1, relative to the screen size. 
+
+input_path      = '/Users/lukasvandenheuvel/Documents/EPFL/MA3/LBM/Biomemdata_raw/gating&IV/AelwtdoubleKtoA';
+output_path     = '/Users/lukasvandenheuvel/Documents/EPFL/MA3/LBM/Biomemdata_cleaned/gating&IV/AelwtdoubleKtoA';
+filename        = 'choose_name_07-03-2023_13-43-55.dat';
+filename_format = 'COMMENT1_COMMENT2_DATE_TIME'; % how the filename is built up (seperate snippets with '_'). For femto data, a field PERIOD must exist which specifies the sampling period.
+device          = 'axopatch';              % choose 'femto', 'axopatch' or 'orbitmini'
 figure_position = [0,0,0.9,0.9];            % figure position: [x,y,width,height]. x and y are positions of the lower-left figure corner. Values must be between 0 and 1, relative to the screen size. 
 
 clipping_length_threshold   = 10;   % regions where the current doesn't change for longer than clipping_length_threshold indeces are considered clipping events.
@@ -47,7 +53,7 @@ disp("Loading data ...")
 input_filepath  = fullfile(input_path, filename);
 data            = read_data(input_filepath,device,filename_format);
 if isempty(data(1).V)
-    disp(['No voltage or current trace was found in ',input_filepath,'. Aborting script.'])
+    disp(['No voltage or current trace was found in ',input_filepath,'. Aborting script.']) %MAKE EXCEPTION FOR WHEN FILES IN FILENAME DONT HAVE THE SAME NAME
     return
 end
 
@@ -117,17 +123,20 @@ for c = 1:length(data)
     cycle_types_unsorted = [zeros(size(sine_wave_inds,1),1) + 1; ...
                             zeros(size(up_step_inds,1),1) + 2; ...
                             zeros(size(down_step_inds,1),1) + 3];
-                        
+
     if isempty(cycle_inds_unsorted)
         disp(['No cycles found in ',fig_title,' channel ',num2str(c)])
         continue
     end
+
 
     [~,inds]    = sort(cycle_inds_unsorted(:,1));
     cycle_inds  = cycle_inds_unsorted(inds,:);
     cycle_types = cycle_types_unsorted(inds,:);
     num_waves   = size(cycle_inds,1);
     
+    
+
     % Initialize empty data structure
     empty_data  = cell(length(cycle_data_fields),1);
     cycle_data  = cell2struct(empty_data, cycle_data_fields);
@@ -198,7 +207,7 @@ for c = 1:length(data)
         p3.YData = I_cycle;
         p4.XData = V_cycle;
         p4.YData = I_cycle;
-        suptitle({fig_title, ['Channel ',num2str(c),' / ',num2str(length(data))],['Cycle ',num2str(count),' / ',num2str(num_waves),' = ',cycle_types_lut{cycle_type}]})
+        subtitle({fig_title, ['Channel ',num2str(c),' / ',num2str(length(data))],['Cycle ',num2str(count),' / ',num2str(num_waves),' = ',cycle_types_lut{cycle_type}]})
 
         % Wait for keyboard press
         press  = waitforbuttonpress;
@@ -206,11 +215,10 @@ for c = 1:length(data)
         answer_history(count) = answer;
 
         switch answer
-            
+
             case 115 % skip channel = 's'
                 disp(['Channel ',num2str(c),' was skipped.'])
                 skipped_channel = true;
-            
             case 29 % add = right arrow
                 n = n + 1;  % indicates how many cycles are added to the structure
                 cycle_data(n).sampling_rate = data(c).sampling_rate;
@@ -253,11 +261,11 @@ for c = 1:length(data)
                 disp('Right arrow → = include this wave')
                 disp('Down arrow  ↓ = exclude this wave')
                 disp('Left arrow  ← = go back to previous')
+                disp('s             = skip this channel/file')
                 disp('Enter         = Leave program. The data will be saved.')
                 disp('.................................')
                 disp('To show this message again, press any other random key.')
         end
-        
         if skipped_channel
             break
         end
